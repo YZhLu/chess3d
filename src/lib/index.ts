@@ -141,18 +141,21 @@ export class Chess3DGame {
     }
 
     private loadBoardModel(): void {
-        // Determina o ambiente e usa a URL apropriada
+        // Determine environment
         const isProduction = window.location.hostname !== 'localhost' && 
                             !window.location.hostname.includes('127.0.0.1');
         
-        // URL para produção (Vercel) vs desenvolvimento (localhost)
+        // Try loading the model (keep your existing URL structure)
         const modelUrl = isProduction
             ? 'https://github.com/YZhLu/chess3d/releases/download/Asset/Chessboard.glb'
-            : '/models/Chessboard.glb'; // Arquivo local para desenvolvimento
-    
+            : '/models/Chessboard.glb';
+
+        console.log(`Attempting to load chess board from: ${modelUrl}`);
+        
         this.loader.load(
             modelUrl,
             (gltf: { scene: THREE.Group }) => {
+                // Your existing success handler
                 this.chessBoard = gltf.scene;
                 console.log('Tabuleiro carregado:', this.chessBoard);
                 this.chessBoard.traverse((child: THREE.Object3D) => {
@@ -206,69 +209,430 @@ export class Chess3DGame {
             },
             (error) => {
                 console.error('Erro ao carregar o modelo:', error);
-                // Fallback para URL alternativa em caso de erro
-                if (modelUrl.includes('github')) {
-                    console.log('Tentando carregar modelo de URL alternativa...');
-                    this.loader.load(
-                        '/models/Chessboard.glb',
-                        (gltf) => {
-                            this.chessBoard = gltf.scene;
-                            // Mesmo processamento do callback de sucesso original
-                            console.log('Tabuleiro carregado do fallback:', this.chessBoard);
-                            this.chessBoard.traverse((child: THREE.Object3D) => {
-                                if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
-                                    if (child.name.includes("Chess Board")) {
-                                        child.material.metalness = 0.8;
-                                        child.material.roughness = 0.2;
-                                        child.material.envMapIntensity = 1.5;
-                                    }
-                                    else if (child.name.includes("Light_") || child.name.includes("Dark_")) {
-                                        child.material.metalness = 1.0;
-                                        child.material.roughness = 0.1;
-                                        child.material.envMapIntensity = 2.0;
-                                    }
-                                    
-                                    child.matrixAutoUpdate = false;
-                                    child.updateMatrix();
-                                    child.frustumCulled = true;
+                
+                // Try fallback local path
+                this.loader.load(
+                    '/models/Chessboard.glb',
+                    (gltf) => {
+                        // Your existing fallback success handler
+                        this.chessBoard = gltf.scene;
+                        console.log('Tabuleiro carregado do fallback:', this.chessBoard);
+                        this.chessBoard.traverse((child: THREE.Object3D) => {
+                            if (child instanceof THREE.Mesh && child.material instanceof THREE.MeshStandardMaterial) {
+                                if (child.name.includes("Chess Board")) {
+                                    child.material.metalness = 0.8;
+                                    child.material.roughness = 0.2;
+                                    child.material.envMapIntensity = 1.5;
                                 }
-                            });
-                            
-                            this.scene.add(this.chessBoard);
-
-                            let boardMesh: THREE.Object3D | null = null;
-                            this.chessBoard.traverse((child: THREE.Object3D) => {
-                                if (child.name.includes("Cube") || child.name === "Chess Board") {
-                                    boardMesh = child;
+                                else if (child.name.includes("Light_") || child.name.includes("Dark_")) {
+                                    child.material.metalness = 1.0;
+                                    child.material.roughness = 0.1;
+                                    child.material.envMapIntensity = 2.0;
                                 }
-                            });
-
-                            if (!boardMesh) {
-                                console.error("Objeto pai não encontrado.");
-                                return;
+                                
+                                child.matrixAutoUpdate = false;
+                                child.updateMatrix();
+                                child.frustumCulled = true;
                             }
+                        });
+                        
+                        this.scene.add(this.chessBoard);
 
-                            const bbox = new THREE.Box3().setFromObject(boardMesh);
-                            const size = new THREE.Vector3();
-                            bbox.getSize(size);
+                        let boardMesh: THREE.Object3D | null = null;
+                        this.chessBoard.traverse((child: THREE.Object3D) => {
+                            if (child.name.includes("Cube") || child.name === "Chess Board") {
+                                boardMesh = child;
+                            }
+                        });
 
-                            this.squareSize = size.x / 8;
-                            this.boardOffset = new THREE.Vector3(
-                                bbox.min.x,
-                                bbox.min.y + 0.7,
-                                bbox.min.z
-                            );
+                        if (!boardMesh) {
+                            console.error("Objeto pai não encontrado.");
+                            return;
+                        }
 
-                            this.organizePieces();
-                        },
-                        undefined,
-                        (err) => console.error('Erro no fallback:', err)
-                    );
-                }
+                        const bbox = new THREE.Box3().setFromObject(boardMesh);
+                        const size = new THREE.Vector3();
+                        bbox.getSize(size);
+
+                        this.squareSize = size.x / 8;
+                        this.boardOffset = new THREE.Vector3(
+                            bbox.min.x,
+                            bbox.min.y + 0.7,
+                            bbox.min.z
+                        );
+
+                        this.organizePieces();
+                    },
+                    undefined,
+                    (fallbackError) => {
+                        console.error('Erro no fallback:', fallbackError);
+                        // Create procedural board when all loading attempts fail
+                        this.createProceduralBoard();
+                    }
+                );
             }
         );
     }
 
+    // Add this method to create a procedural chess board
+    private createProceduralBoard(): void {
+        console.log("Creating procedural chess board as fallback");
+        
+        // Create board group
+        const boardGroup = new THREE.Group();
+        boardGroup.name = "Chess Board";
+        
+        // Create board base
+        const baseGeometry = new THREE.BoxGeometry(8.2, 0.5, 8.2);
+        const baseMaterial = new THREE.MeshStandardMaterial({
+            color: 0x5D4037,
+            roughness: 0.7,
+            metalness: 0.2
+        });
+        const base = new THREE.Mesh(baseGeometry, baseMaterial);
+        base.position.y = -0.3;
+        boardGroup.add(base);
+        
+        // Create chess squares
+        for (let x = 0; x < 8; x++) {
+            for (let z = 0; z < 8; z++) {
+                const isLight = (x + z) % 2 === 0;
+                const color = isLight ? 0xEEEED2 : 0x769656;
+                
+                const squareGeometry = new THREE.BoxGeometry(1, 0.1, 1);
+                const squareMaterial = new THREE.MeshStandardMaterial({
+                    color: color,
+                    roughness: isLight ? 0.8 : 0.7,
+                    metalness: isLight ? 0.1 : 0.2
+                });
+                
+                const square = new THREE.Mesh(squareGeometry, squareMaterial);
+                square.position.set(x - 3.5 + 0.5, 0, z - 3.5 + 0.5);
+                boardGroup.add(square);
+            }
+        }
+        
+        // Add board to scene
+        this.scene.add(boardGroup);
+        this.chessBoard = boardGroup;
+        
+        // Set board parameters
+        this.squareSize = 1;
+        this.boardOffset = new THREE.Vector3(-3.5, 0, -3.5);
+        
+        // Create pieces
+        this.createProceduralPieces();
+    }
+
+    private createProceduralPieces(): void {
+        // Define piece configurations
+        const pieceConfig = {
+            'p': { height: 0.7, baseWidth: 0.3 },  // Pawn
+            'r': { height: 0.9, baseWidth: 0.4 },  // Rook
+            'n': { height: 1.0, baseWidth: 0.4 },  // Knight
+            'b': { height: 1.1, baseWidth: 0.4 },  // Bishop
+            'q': { height: 1.3, baseWidth: 0.5 },  // Queen
+            'k': { height: 1.5, baseWidth: 0.5 }   // King
+        };
+        
+        // Define colors
+        const colors = {
+            'w': 0xF0F0F0, // White
+            'b': 0x303030  // Black
+        };
+        
+        // Initial positions
+        const initialPositions = {
+            'b': {
+                'k': 'e8', 'q': 'd8',
+                'b': ['c8', 'f8'], 'n': ['b8', 'g8'], 'r': ['a8', 'h8'],
+                'p': ['a7', 'b7', 'c7', 'd7', 'e7', 'f7', 'g7', 'h7']
+            },
+            'w': {
+                'k': 'e1', 'q': 'd1',
+                'b': ['c1', 'f1'], 'n': ['b1', 'g1'], 'r': ['a1', 'h1'],
+                'p': ['a2', 'b2', 'c2', 'd2', 'e2', 'f2', 'g2', 'h2']
+            }
+        };
+        
+        // Create pieces for both colors
+        for (const [color, pieces] of Object.entries(initialPositions)) {
+            for (const [pieceType, positions] of Object.entries(pieces)) {
+                if (Array.isArray(positions)) {
+                    positions.forEach((position, index) => {
+                        const piece = this.createProcPiece(
+                            pieceType,
+                            color,
+                            pieceConfig[pieceType as keyof typeof pieceConfig],
+                            colors[color as keyof typeof colors],
+                            index
+                        );
+                        this.pieceObjects.set(position, piece);
+                        
+                        const pos3D = this.get3DPositionFromChessNotation(position);
+                        piece.position.copy(pos3D);
+                        this.scene.add(piece);
+                    });
+                } else {
+                    const piece = this.createProcPiece(
+                        pieceType,
+                        color,
+                        pieceConfig[pieceType as keyof typeof pieceConfig],
+                        colors[color as keyof typeof colors],
+                        0
+                    );
+                    this.pieceObjects.set(positions, piece);
+                    
+                    const pos3D = this.get3DPositionFromChessNotation(positions);
+                    piece.position.copy(pos3D);
+                    this.scene.add(piece);
+                }
+            }
+        }
+        
+        console.log("Procedural chess pieces created");
+    }
+
+    private createProcPiece(
+        type: string,
+        color: string,
+        config: { height: number, baseWidth: number },
+        materialColor: number,
+        index: number
+    ): THREE.Object3D {
+        const group = new THREE.Group();
+        group.name = `${color === 'w' ? 'Light' : 'Dark'}_${this.getPieceNameFromType(type, index)}`;
+        
+        // Common material
+        const material = new THREE.MeshStandardMaterial({
+            color: materialColor,
+            roughness: 0.3,
+            metalness: 0.8,
+            envMapIntensity: 1.0
+        });
+        
+        // Base for all pieces
+        const baseHeight = config.height * 0.15;
+        const baseGeometry = new THREE.CylinderGeometry(
+            config.baseWidth * 0.8,
+            config.baseWidth,
+            baseHeight,
+            16
+        );
+        const base = new THREE.Mesh(baseGeometry, material);
+        base.position.y = baseHeight / 2;
+        group.add(base);
+        
+        switch(type) {
+            case 'p': // Pawn
+                this.createPawnShape(group, config, material);
+                break;
+            case 'r': // Rook
+                this.createRookShape(group, config, material);
+                break;
+            case 'n': // Knight
+                this.createKnightShape(group, config, material);
+                break;
+            case 'b': // Bishop
+                this.createBishopShape(group, config, material);
+                break;
+            case 'q': // Queen
+                this.createQueenShape(group, config, material);
+                break;
+            case 'k': // King
+                this.createKingShape(group, config, material);
+                break;
+        }
+        
+        return group;
+    }
+
+    // Helper methods to create specific piece shapes
+    private createPawnShape(group: THREE.Group, config: { height: number, baseWidth: number }, material: THREE.Material): void {
+        const bodyHeight = config.height * 0.5;
+        const bodyGeometry = new THREE.CylinderGeometry(
+            config.baseWidth * 0.6,
+            config.baseWidth * 0.7,
+            bodyHeight,
+            16
+        );
+        const body = new THREE.Mesh(bodyGeometry, material);
+        body.position.y = config.height * 0.25;
+        
+        const headGeometry = new THREE.SphereGeometry(config.baseWidth * 0.5, 16, 16);
+        const head = new THREE.Mesh(headGeometry, material);
+        head.position.y = config.height * 0.6;
+        
+        group.add(body);
+        group.add(head);
+    }
+
+    private createRookShape(group: THREE.Group, config: { height: number, baseWidth: number }, material: THREE.Material): void {
+        const bodyHeight = config.height * 0.7;
+        const bodyGeometry = new THREE.BoxGeometry(
+            config.baseWidth * 0.8,
+            bodyHeight,
+            config.baseWidth * 0.8
+        );
+        const body = new THREE.Mesh(bodyGeometry, material);
+        body.position.y = config.height * 0.4;
+        
+        const topGeometry = new THREE.BoxGeometry(
+            config.baseWidth * 1.0,
+            config.height * 0.2,
+            config.baseWidth * 1.0
+        );
+        const top = new THREE.Mesh(topGeometry, material);
+        top.position.y = config.height * 0.85;
+        
+        group.add(body);
+        group.add(top);
+    }
+
+    private createKnightShape(group: THREE.Group, config: { height: number, baseWidth: number }, material: THREE.Material): void {
+        const bodyGeometry = new THREE.CylinderGeometry(
+            config.baseWidth * 0.6,
+            config.baseWidth * 0.7,
+            config.height * 0.5,
+            16
+        );
+        const body = new THREE.Mesh(bodyGeometry, material);
+        body.position.y = config.height * 0.3;
+        
+        const headGeometry = new THREE.SphereGeometry(config.baseWidth * 0.5, 16, 16);
+        const head = new THREE.Mesh(headGeometry, material);
+        head.position.y = config.height * 0.65;
+        head.position.x = config.baseWidth * 0.2;
+        head.scale.z = 1.5;
+        head.rotation.x = -Math.PI / 6;
+        
+        const earGeometry = new THREE.ConeGeometry(
+            config.baseWidth * 0.3,
+            config.height * 0.4,
+            8
+        );
+        const ear = new THREE.Mesh(earGeometry, material);
+        ear.position.y = config.height * 0.85;
+        ear.position.x = config.baseWidth * 0.1;
+        ear.rotation.z = -Math.PI / 6;
+        
+        group.add(body);
+        group.add(head);
+        group.add(ear);
+    }
+
+    private createBishopShape(group: THREE.Group, config: { height: number, baseWidth: number }, material: THREE.Material): void {
+        const bodyGeometry = new THREE.CylinderGeometry(
+            config.baseWidth * 0.3,
+            config.baseWidth * 0.7,
+            config.height * 0.6,
+            16
+        );
+        const body = new THREE.Mesh(bodyGeometry, material);
+        body.position.y = config.height * 0.35;
+        
+        const headGeometry = new THREE.SphereGeometry(config.baseWidth * 0.4, 16, 16);
+        const head = new THREE.Mesh(headGeometry, material);
+        head.position.y = config.height * 0.75;
+        
+        const topGeometry = new THREE.ConeGeometry(
+            config.baseWidth * 0.2,
+            config.height * 0.2,
+            16
+        );
+        const top = new THREE.Mesh(topGeometry, material);
+        top.position.y = config.height * 0.95;
+        
+        group.add(body);
+        group.add(head);
+        group.add(top);
+    }
+
+    private createQueenShape(group: THREE.Group, config: { height: number, baseWidth: number }, material: THREE.Material): void {
+        const bodyGeometry = new THREE.CylinderGeometry(
+            config.baseWidth * 0.5,
+            config.baseWidth * 0.7,
+            config.height * 0.7,
+            16
+        );
+        const body = new THREE.Mesh(bodyGeometry, material);
+        body.position.y = config.height * 0.4;
+        
+        const headGeometry = new THREE.SphereGeometry(config.baseWidth * 0.5, 16, 16);
+        const head = new THREE.Mesh(headGeometry, material);
+        head.position.y = config.height * 0.8;
+        
+        // Crown spikes
+        for (let i = 0; i < 5; i++) {
+            const spikeGeometry = new THREE.ConeGeometry(
+                config.baseWidth * 0.15,
+                config.height * 0.2,
+                8
+            );
+            const spike = new THREE.Mesh(spikeGeometry, material);
+            spike.position.y = config.height * 1.0;
+            
+            // Position in a circle
+            const angle = (i / 5) * Math.PI * 2;
+            spike.position.x = Math.sin(angle) * config.baseWidth * 0.3;
+            spike.position.z = Math.cos(angle) * config.baseWidth * 0.3;
+            
+            group.add(spike);
+        }
+        
+        group.add(body);
+        group.add(head);
+    }
+
+    private createKingShape(group: THREE.Group, config: { height: number, baseWidth: number }, material: THREE.Material): void {
+        const bodyGeometry = new THREE.CylinderGeometry(
+            config.baseWidth * 0.5,
+            config.baseWidth * 0.7,
+            config.height * 0.7,
+            16
+        );
+        const body = new THREE.Mesh(bodyGeometry, material);
+        body.position.y = config.height * 0.4;
+        
+        const headGeometry = new THREE.SphereGeometry(config.baseWidth * 0.5, 16, 16);
+        const head = new THREE.Mesh(headGeometry, material);
+        head.position.y = config.height * 0.8;
+        
+        // Cross
+        const vertCrossGeometry = new THREE.BoxGeometry(
+            config.baseWidth * 0.15,
+            config.height * 0.3,
+            config.baseWidth * 0.15
+        );
+        const vertCross = new THREE.Mesh(vertCrossGeometry, material);
+        vertCross.position.y = config.height * 1.1;
+        
+        const horizCrossGeometry = new THREE.BoxGeometry(
+            config.baseWidth * 0.4,
+            config.height * 0.15,
+            config.baseWidth * 0.15
+        );
+        const horizCross = new THREE.Mesh(horizCrossGeometry, material);
+        horizCross.position.y = config.height * 1.05;
+        
+        group.add(body);
+        group.add(head);
+        group.add(vertCross);
+        group.add(horizCross);
+    }
+
+    private getPieceNameFromType(type: string, index: number): string {
+        switch (type) {
+            case 'k': return 'King';
+            case 'q': return 'Queen';
+            case 'b': return `Bishop_${index + 1}`;
+            case 'n': return `Knight_${index + 1}`;
+            case 'r': return `Rock_${index + 1}`; // Match your original naming
+            case 'p': return `Pawn_${index + 1}`;
+            default: return type;
+        }
+    }
+    
     private findObjectByName(object: THREE.Object3D, name: string): THREE.Object3D | null {
         if (object.name === name) return object;
         
