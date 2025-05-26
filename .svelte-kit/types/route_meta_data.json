@@ -1,3 +1,6 @@
 {
-	"/": []
+	"/": [],
+	"/api/asset": [
+		"src/routes/api/asset/+server.ts"
+	]
 }
